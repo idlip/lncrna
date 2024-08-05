@@ -3,6 +3,8 @@
 # Script to identify lncRNA
 LNCRNA_VERSION=0.1
 
+# set -e (to exit if any command does not run)
+
 # colors echo -e {{{
 c_red="\033[1;31m"
 c_green="\033[1;32m"
@@ -258,21 +260,24 @@ function diffge() {
 	Rscript --vanilla deseq.R
 }
 
+# better to merge bam files or bed files?
+
 function bam2bed() {
     for file in aligned_out/bam/*; do
         BED_OUT="aligned_output/bed/$(basename "$file" .bam).bed"
-        bedtools bamtobed -bedpe -i "$file" | bedtools sort -i stdin > "$BED_OUT"
+        bedtools bamtobed -bedpe -i "$file" > "$BED_OUT"
     done
 }
 
 function mergebed() {
     BEDFILE="results/final.bed" #TODO FIXME
-    filearg=""
-    for file in $(ls -v aligned_output/bed/*); do
-        # to chain the input argument together for all files. bedtools does not take * as expansion
-        filearg="$filearg -i $file"
-    done
-    bedtools merge "$filearg" > "$BEDFILE"
+    # filearg=""
+    # for file in $(ls -v aligned_output/bed/*); do
+    #     # to chain the input argument together for all files. bedtools does not take * as expansion
+    #     filearg="$filearg -i $file"
+    # done
+    # cat aligned_output/bed/*.bed | bedtools sort -i stdin | bedtools merge -i stdin > "$BEDFILE"
+    sort -u aligned_output/bed/*.bed -o "$BEDFILE"
 }
 
 function codingpotential() {
