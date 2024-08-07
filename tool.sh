@@ -48,11 +48,22 @@ help_info() {
 	exit 0
 }
 
+#####################################################################
+##### Variables/constant for defining reusable code dynamically #####
+#####################################################################
+REF_EDITION="model/hg19.fa"
+LOGIT="model/Human_logitModel.RData"
+HEXAMER="model/Human_Hexamer.tsv"
+
+##########################################################################
+##### Function to check for gz|fastq files in given input directory #####
+##########################################################################
 function check_fastq() {
 	echo -e "${c_cyan}Check:${c_reset} Validating the Input directory"
 	# INPUT_FASTQ_FILES="$(find "$INPUT_FASTQ_DIR" -type f \( -name "*.gz" -o -name "*.fastq.gz" -o -name "*.fastq" -o -name "*.fq.gz" \) | sort -V)"
 	# INPUT_FASTQ_FILES=($(ls -v "${INPUT_FASTQ_DIR}"/*.gz | uniq))
 	mapfile -t INPUT_FASTQ_FILES < <(find "$INPUT_FASTQ_DIR" -type f \( -name "*.gz" -o -name "*.fastq" -o -name "*.fq" \) | sort -Vk1)
+	### so many ways, depends on best way. But all will work enough!! ###
 	# mapfile -t INPUT_FASTQ_FILES < <((ls -v "${INPUT_FASTQ_DIR}"/*.gz | uniq) 2> /dev/null)
 	if [ "$(printf "%s" "${INPUT_FASTQ_FILES[@]}" | wc -c)" -gt 2 ]; then # if [$(find "$INPUT_FASTQ_DIR" -type f \( -name "*.gz" -o -name "*.fastq.gz" -o -name "*.fastq" -o -name "*.fq.gz" \) | wc -l) ]
 		printf "files are legit\n"
@@ -68,6 +79,7 @@ function version_info() {
 	exit 0
 }
 
+##### prefer nix or snakemake or conda or ...? Soemthing universal and dependable
 # # check distro used and determine the install command to be used
 # _check_distro() {
 #     _distro="$(grep -i "^ID=" /etc/os-release | cut -d'=' -f2)"
@@ -88,7 +100,7 @@ function version_info() {
 # }
 # _check_distro
 
-# array of dependency tools required
+# array of dependency tools required # nix?
 _dependency=(
 	"fastp"
 	"bwa"
@@ -113,9 +125,13 @@ _dependency=(
 function parse_fastq() {
 	# to parse and fetch ref + annotation file
 	# need to use api to get info?
+	# As on 2024-08-07, we need manual input of paired or single end, rest taken care!
 	echo hi
 }
 
+################################################################################
+######### List the Fastq files in fashion of sinlge or paired manner ###########
+################################################################################
 function print_fastq_files() {
 	if [ "$FASTQ_READ" == "paired" ]; then
 		echo "Reading files in pairs: "
@@ -133,6 +149,9 @@ function print_fastq_files() {
 
 }
 
+######################################################################
+######## Pre-processing the raw reads to trim bad quality ############
+######################################################################
 function pre_process() {
 	echo -e "${c_cyan}PreProcess:${c_reset} Trimming the fastq reads using $TRIMMER_TOOL"
 	if [ "$FASTQ_READ" == "paired" ]; then
@@ -165,8 +184,11 @@ function pre_process() {
 	fi
 }
 
+######################################################################################
+##### Index the reference genome using a tool of choice for paired or single end #####
+######################################################################################
 function index_refgen() {
-  echo -e "${c_cyan}Indexing:${c_reset} Indexing the reference genome ($REF_GENOME) usign $ALIGNER_TOOL"
+	echo -e "${c_cyan}Indexing:${c_reset} Indexing the reference genome ($REF_GENOME) usign $ALIGNER_TOOL"
 	REF_DIR=$(dirname "$REF_GENOME")
 	REF_NAME="echo $REF_GENOME | cut -d'.' -f1"
 	case "$ALIGNER_TOOL" in
@@ -191,8 +213,11 @@ function index_refgen() {
 	esac
 }
 
+##############################################################################
+##### Align the sequence against the reference genome using the same tool #####
+##############################################################################
 function aligner() {
-  echo -e "${c_cyan}Aligning:${c_reset} Mapping the reads onto reference genome ($REF_GENOME) using $ALIGNER_TOOL"
+	echo -e "${c_cyan}Aligning:${c_reset} Mapping the reads onto reference genome ($REF_GENOME) using $ALIGNER_TOOL"
 	if [ "$FASTQ_READ" == "paired" ]; then
 		for ((i = 0; i < ${#INPUT_FASTQ_FILES[@]}; i += 2)); do
 			SAMOUT="aligned_output/sam/$(basename "${INPUT_FASTQ_FILES[i]}" | cut -d'.' -f1).sam"
@@ -236,18 +261,24 @@ function aligner() {
 	# echo "Aligning all files from $input_fastq_dir onto ref.fna"
 }
 
+############################################################
+##### Convert sam to bam and save space & be efficient #####
+############################################################
 function sam2bam() {
 	echo -e "${c_cyan}BAM:${c_reset} Converting, sorting and Indexing SAM file into BAM file format"
 	for file in aligned_out/sam/*; do
-    BAM_OUT="aligned_output/bam/$(basename "$file" .sam).bam"
+		BAM_OUT="aligned_output/bam/$(basename "$file" .sam).bam"
 		samtools view -Sb -o "$BAM_OUT" "$file"
 		samtools sort -o "$BAM_OUT" "$file"
 		samtools index "$BAM_OUT"
 	done
 }
 
+#########################################################################
+##### Quantify the gene using featureCounts via annotation of exons #####
+#########################################################################
 function ann_genes() {
-    echo -e "${c_cyan}Quantification:${c_reset} Quantify the lncRNA from annotation file ($ANN_FILE)"
+	echo -e "${c_cyan}Quantification:${c_reset} Quantify the lncRNA from annotation file ($ANN_FILE)"
 	if [ "$FASTQ_READ" == "paired" ]; then
 		featureCounts -p --countReadPairs -t exon -g gene_id -a "$ANN_FILE" -o counts.txt aligned_output/bam/*
 	else
@@ -261,29 +292,50 @@ function diffge() {
 }
 
 # better to merge bam files or bed files?
+# caveat limit with bam would be of memory usage of streaming files
 
+##############################################################
+##### Loop all bam files and convert them into bed files #####
+##############################################################
 function bam2bed() {
-    for file in aligned_out/bam/*; do
-        BED_OUT="aligned_output/bed/$(basename "$file" .bam).bed"
-        bedtools bamtobed -bedpe -i "$file" > "$BED_OUT"
-    done
+	for file in aligned_out/bam/*; do
+		BED_OUT="aligned_output/bed/$(basename "$file" .bam).bed"
+		bedtools bamtobed -bedpe -i "$file" >"$BED_OUT"
+	done
 }
 
+############################################################
+##### Merge the many bed files using sort unix command #####
+############################################################
 function mergebed() {
-    BEDFILE="results/final.bed" #TODO FIXME
-    # filearg=""
-    # for file in $(ls -v aligned_output/bed/*); do
-    #     # to chain the input argument together for all files. bedtools does not take * as expansion
-    #     filearg="$filearg -i $file"
-    # done
-    # cat aligned_output/bed/*.bed | bedtools sort -i stdin | bedtools merge -i stdin > "$BEDFILE"
-    sort -u aligned_output/bed/*.bed -o "$BEDFILE"
+	BEDFILE="results/final.bed" #TODO FIXME
+	# filearg=""
+	# for file in $(ls -v aligned_output/bed/*); do
+	#     # to chain the input argument together for all files. bedtools does not take * as expansion
+	#     filearg="$filearg -i $file"
+	# done
+	# cat aligned_output/bed/*.bed | bedtools sort -i stdin | bedtools merge -i stdin > "$BEDFILE"
+  # NOTE: bedtools merge gets you only few columns, dont know the difference tho, with '-c' you can filter for specific columns
+	sort -u aligned_output/bed/*.bed -o "$BEDFILE"
 }
 
+##############################################################################################
+##### Calculate the coding potential of merged bed file against built model of reference #####
+##############################################################################################
 function codingpotential() {
-    cpat -r "$REF_GENOME" -g "$BEDFILE" -d "$LOGIT" -x "$HEXAMER" -o "results/cpat-out" "$CPAT_OPTS"
+	cpat -r "$REF_EDITION" -g "$BEDFILE" -d "$LOGIT" -x "$HEXAMER" -o "results/final-out" "$CPAT_OPTS"
+	Rscript "ncp-filter.R" "results/final-out.ORF_prob.tsv" #FIXME
 }
 
+#####################################################################
+##### Filter and extract the long non-coding ORF sequence files #####
+#####################################################################
+function extract_lncrna() {
+	seqkit seq -m 200 "results/final-out.ORF_seqs.fa" -o "results/long_seqs.fa"
+	seqkit grep -r -f "results/ncp-gene-list.tsv" "results/long_seqs.fa" -o "results/lncrna.fa"
+}
+
+# conditional loop over the arguments to move forward
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-i | --input)
@@ -313,9 +365,9 @@ while [ $# -gt 0 ]; do
 	-p | --paired)
 		FASTQ_READ="paired"
 		;;
-  -c | --cpat)
-      CPAT_OPTS="$2"
-    ;;
+	-c | --cpat)
+		CPAT_OPTS="$2"
+		;;
 		# *)
 		#     help_info
 		#     ;;
