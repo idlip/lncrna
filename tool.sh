@@ -38,7 +38,8 @@ help_info() {
         Aligner tool to be used                                        (options: bwa, minimap2, hisat2, bowtie2, star)
       ${c_yellow}-n, --annotate  ${c_reset}
         lncRNA annotation GTF file
-
+      ${c_yellow}-@, --threads  ${c_reset}                             (Type: Integer)
+        Threads for certain tools to be used for efficient computation
 
 
       ${c_yellow}-v, --version${c_reset}
@@ -300,7 +301,7 @@ function diffge() {
 function bam2bed() {
 	for file in aligned_out/bam/*; do
 		BED_OUT="aligned_output/bed/$(basename "$file" .bam).bed"
-		bedtools bamtobed -bedpe -i "$file" >"$BED_OUT"
+		bedtools bamtobed -bed12 -i "$file" >"$BED_OUT"
 	done
 }
 
@@ -368,6 +369,9 @@ while [ $# -gt 0 ]; do
 	-c | --cpat)
 		CPAT_OPTS="$2"
 		;;
+  -@ | --threads)
+      THREADS="$2"
+      ;;
 		# *)
 		#     help_info
 		#     ;;
