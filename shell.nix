@@ -1,13 +1,26 @@
 with import <nixpkgs> {};
 
 let
+  pypkgs = (python312.withPackages ((ps: with ps; [
+    venvShellHook
+    pip
+    biopython
+    (callPackage ./cpat.nix {})
+    numpy
+    pysam
+    (callPackage ./forkhtseq.nix {})
+    (callPackage ./gffutil.nix {})
+  ])));
+
+
   rpkgs = with rPackages; [
-    # lintr
+    lintr styler
     # languageserver
     # data_table
     # dplyr
-    ggplot2
-    # tidyverse # includes 9 packages that are down below
+    ggplot2 ggpubr
+    tidyverse # includes 9 packages that are down below
+    GDCRNATools topGO ALL
     Biostrings
     BiocManager
     DESeq2 # gene exp analysis
@@ -31,7 +44,10 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     shellcheck bash-language-server shfmt
     fastp samtools bwa bowtie2
-    subread
+    subread star
+    vscodium bedtools
+    yq
+    pypkgs
 
     (rWrapper.override {
       packages = [
