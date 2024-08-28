@@ -24,55 +24,104 @@ help_info() {
     Usage:
     ${c_green}%s${c_reset} [options] [fastq dir]
     ${c_green}%s${c_reset} -t fastp -a bwa -i rawData
-    ${c_green}%s${c_reset} -t fastp '-w 8 -z -V' -a bwa '-t 6 -k 33' -i rawData  (with additional parameters for tool)
-
 
     Options:
-      ${c_yellow}-i, --input${c_reset}
+      ${c_yellow}-c, --config ${c_reset}
+        Configuration file path for the tool
+      ${c_yellow}-i, --input ${c_reset}
         Input Fastq files directory
-      ${c_yellow}-t, --trim 'additional commands' ${c_reset}
+      ${c_yellow}-t, --trim ${c_reset}
         Pre-processing tool to trim bad quality reads                  (options: fastp or trimgalore)
       ${c_yellow}-r, --refgenome  ${c_reset}
-        Reference genome file  (recommended to keep in directory)
-      ${c_yellow}-a, --aligner 'additional commands'  ${c_reset}
+        Reference genome file path
+      ${c_yellow}-a, --aligner  ${c_reset}
         Aligner tool to be used                                        (options: bwa, minimap2, hisat2, bowtie2, star)
       ${c_yellow}-n, --annotate  ${c_reset}
         lncRNA annotation GTF file
       ${c_yellow}-@, --threads  ${c_reset}                             (Type: Integer)
         Threads for certain tools to be used for efficient computation
-
-
+      ${c_yellow}-p, --paired  ${c_reset}
+        Indicate that raw sequence files are paired end reads
       ${c_yellow}-v, --version${c_reset}
         Print version of the tool
 
-        " "${0##*/}" "${0##*/}" "${0##*/}" # to printf the bash file name
-	exit 0
+        " "${0##*/}" "${0##*/}"  # to printf the bash file name
+        	exit 0
+}
+
+###########################
+##### Config template #####
+###########################
+function _init_config() {
+    cat <<- EOF
+hello
+world
+
+EOF
+exit 0
 }
 
 #####################################################################
 ##### Variables/constant for defining reusable code dynamically #####
 #####################################################################
-REF_EDITION="model/hg19.fa"
-LOGIT="model/Human_logitModel.RData"
-HEXAMER="model/Human_Hexamer.tsv"
+: "${LNCRNA_CONF:=$PWD/lncrna.conf}"
+function _parse_conf() {
+if [ -f "$LNCRNA_CONF" ]; then
+    source "$LNCRNA_CONF"
+else
+    echo -e "${c_red}Error:${c_reset} No config file found"
+    exit 1
+fi
+}
+
+#################################
+##### Check for Executables #####
+#################################
+_check_pkgs() {
+    _dependency=(
+        "$ALIGNER_TOOL" "$TRIMMER_TOOL"
+    )
+    for pkg in "${_dependency[@]}"; do
+        if [ ! -x "$(command -v "$pkg")" ]; then
+            echo -e "Package ${c_yellow}$pkg${c_reset} not installed."
+            echo "Please install it or use the preferred Nix package method."
+            exit 0
+        fi
+    done
+}
+
+###############################
+##### Check for all files #####
+###############################
+_check_files() {
+    _data_files=(
+        "$REFERENCE_GENOME" "$LOGIT_FILE" "$HEXAMER_FILE"
+    )
+    for file in "${_data_files[@]}"; do
+        [ -f "$file" ] || \
+            (echo -e "${c_cyan}Error:${c_reset} $file file not found" \
+                 && exit 1)
+    done
+
+}
 
 ##########################################################################
 ##### Function to check for gz|fastq files in given input directory #####
 ##########################################################################
 function check_fastq() {
 	echo -e "${c_cyan}Check:${c_reset} Validating the Input directory"
-	# INPUT_FASTQ_FILES="$(find "$INPUT_FASTQ_DIR" -type f \( -name "*.gz" -o -name "*.fastq.gz" -o -name "*.fastq" -o -name "*.fq.gz" \) | sort -V)"
-	# INPUT_FASTQ_FILES=($(ls -v "${INPUT_FASTQ_DIR}"/*.gz | uniq))
-	mapfile -t INPUT_FASTQ_FILES < <(find "$INPUT_FASTQ_DIR" -type f \( -name "*.gz" -o -name "*.fastq" -o -name "*.fq" \) | sort -Vk1)
+	# RAWDATA_FILES="$(find "$RAWDATA_DIR" -type f \( -name "*.gz" -o -name "*.fastq.gz" -o -name "*.fastq" -o -name "*.fq.gz" \) | sort -V)"
+	# RAWDATA_FILES=($(ls -v "${RAWDATA_DIR}"/*.gz | uniq))
+	mapfile -t RAWDATA_FILES < <(find "$RAWDATA_DIR" -type f \( -name "*.gz" -o -name "*.fastq" -o -name "*.fq" \) | sort -Vk1)
 	### so many ways, depends on best way. But all will work enough!! ###
-	# mapfile -t INPUT_FASTQ_FILES < <((ls -v "${INPUT_FASTQ_DIR}"/*.gz | uniq) 2> /dev/null)
-	if [ "$(printf "%s" "${INPUT_FASTQ_FILES[@]}" | wc -c)" -gt 2 ]; then # if [$(find "$INPUT_FASTQ_DIR" -type f \( -name "*.gz" -o -name "*.fastq.gz" -o -name "*.fastq" -o -name "*.fq.gz" \) | wc -l) ]
+	# mapfile -t RAWDATA_FILES < <((ls -v "${RAWDATA_DIR}"/*.gz | uniq) 2> /dev/null)
+	if [ "$(printf "%s" "${RAWDATA_FILES[@]}" | wc -c)" -gt 2 ]; then # if [$(find "$RAWDATA_DIR" -type f \( -name "*.gz" -o -name "*.fastq.gz" -o -name "*.fastq" -o -name "*.fq.gz" \) | wc -l) ]
 		printf "files are legit\n"
 	else
 		echo -e "${c_red}${c_bold}Error: ${c_reset}The input directory does not have any Fastq files"
 		exit 0
 	fi
-	# mkdir -p qc_reports trimmed_data aligned_output/{sam,bam}
+	# mkdir -p $QC_DIR trimmed_data $ALIGNED_DIR/{sam,bam}
 }
 
 function version_info() {
@@ -101,33 +150,11 @@ function version_info() {
 # }
 # _check_distro
 
-# array of dependency tools required # nix?
-_dependency=(
-	"fastp"
-	"bwa"
-	"bowtie2"
-	"samtools"
-	"lolcat"
-)
-
-# check dependency package and install it
-# _check_pkgs() {
-#     for pkg in "${_dependency[@]}"; do
-#         if [ ! -x "$(command -v "$pkg")" ]; then
-#             echo "Package $pkg not installed, Installing it now."
-#             echo "Please provide the sudo password to run '$install_pkg $pkg' for installing the package:"
-#             $install_pkg "$pkg"
-#         fi
-#     done
-#     echo "All packages are ready!"
-# }
-# _check_pkgs
-
 function parse_fastq() {
 	# to parse and fetch ref + annotation file
 	# need to use api to get info?
 	# As on 2024-08-07, we need manual input of paired or single end, rest taken care!
-	echo hi
+	echo ""
 }
 
 ################################################################################
@@ -136,13 +163,13 @@ function parse_fastq() {
 function print_fastq_files() {
 	if [ "$FASTQ_READ" == "paired" ]; then
 		echo "Reading files in pairs: "
-		for ((i = 0; i < ${#INPUT_FASTQ_FILES[@]}; i += 2)); do
-			echo "${INPUT_FASTQ_FILES[i]} ${INPUT_FASTQ_FILES[i + 1]}"
-			basename "${INPUT_FASTQ_FILES[i]}" | cut -d'.' -f1
+		for ((i = 0; i < ${#RAWDATA_FILES[@]}; i += 2)); do
+			echo "${RAWDATA_FILES[i]} ${RAWDATA_FILES[i + 1]}"
+			basename "${RAWDATA_FILES[i]}" | cut -d'.' -f1
 		done
 	else
 		echo "Reading single end files"
-		for file in "${INPUT_FASTQ_FILES[@]}"; do
+		for file in "${RAWDATA_FILES[@]}"; do
 			echo "$file"
 			basename "$file" | cut -d'.' -f1
 		done
@@ -156,23 +183,23 @@ function print_fastq_files() {
 function pre_process() {
 	echo -e "${c_cyan}PreProcess:${c_reset} Trimming the fastq reads using $TRIMMER_TOOL"
 	if [ "$FASTQ_READ" == "paired" ]; then
-		for ((i = 0; i < ${#INPUT_FASTQ_FILES[@]}; i += 2)); do
-			TRIMOUT1="trimmed_output/$(basename "${INPUT_FASTQ_FILES[i]}")"
-			TRIMOUT2="trimmed_output/$(basename "${INPUT_FASTQ_FILES[i + 1]}")"
-			REPORT="qc_reports/$(basename "${file}" | cut -d'.' -f1).html"
+		for ((i = 0; i < ${#RAWDATA_FILES[@]}; i += 2)); do
+			TRIMOUT1="$TRIM_DIR/$(basename "${RAWDATA_FILES[i]}")"
+			TRIMOUT2="$TRIM_DIR/$(basename "${RAWDATA_FILES[i + 1]}")"
+			REPORT="$QC_DIR/$(basename "${file}" | cut -d'.' -f1).html"
 			case "$TRIMMER_TOOL" in
 			"fastp")
-				fastp -i "${INPUT_FASTQ_FILES[i]}" -I "${INPUT_FASTQ_FILES[i + 1]}" -o "$TRIMOUT1" -O "$TRIMOUT2" -h "$REPORT" "$TRIMMER_OPTS"
+				fastp -i "${RAWDATA_FILES[i]}" -I "${RAWDATA_FILES[i + 1]}" -o "$TRIMOUT1" -O "$TRIMOUT2" -h "$REPORT" "$TRIMMER_OPTS"
 				;;
 			"trimgalore")
-				trimgalore -q 20 --stringency 3 --gzip --length 20 --paired "${INPUT_FASTQ_FILES[i]}" "${INPUT_FASTQ_FILES[i + 1]}" -o trimmed_output/ "$TRIMMER_OPTS"
+				trimgalore -q 20 --stringency 3 --gzip --length 20 --paired "${RAWDATA_FILES[i]}" "${RAWDATA_FILES[i + 1]}" -o $TRIM_DIR/ "$TRIMMER_OPTS"
 				;;
 			esac
 		done
 	else
-		for file in "${INPUT_FASTQ_FILES[@]}"; do
-			TRIMOUT="trimmed_output/$(basename "${file}")"
-			REPORT="qc_reports/$(basename "${file}" | cut -d'.' -f1).html"
+		for file in "${RAWDATA_FILES[@]}"; do
+			TRIMOUT="$TRIM_DIR/$(basename "${file}")"
+			REPORT="$QC_DIR/$(basename "${file}" | cut -d'.' -f1).html"
 			case "$TRIMMER_TOOL" in
 			"fastp")
 				fastp -i "$file" -o "$TRIMOUT" -h "$REPORT" "$TRIMMER_OPTS"
@@ -189,21 +216,21 @@ function pre_process() {
 ##### Index the reference genome using a tool of choice for paired or single end #####
 ######################################################################################
 function index_refgen() {
-	echo -e "${c_cyan}Indexing:${c_reset} Indexing the reference genome ($REF_GENOME) usign $ALIGNER_TOOL"
-	REF_DIR=$(dirname "$REF_GENOME")
-	REF_NAME="echo $REF_GENOME | cut -d'.' -f1"
+	echo -e "${c_cyan}Indexing:${c_reset} Indexing the reference genome ($REFERENCE_GENOME) usign $ALIGNER_TOOL"
+	REF_DIR=$(dirname "$REFERENCE_GENOME")
+	REF_NAME="echo $REFERENCE_GENOME | cut -d'.' -f1"
 	case "$ALIGNER_TOOL" in
 	"minimap2")
-		minimap2 -d "$REF_NAME".mmi "$REF_GENOME" "$ALIGNER_OPTS"
+		minimap2 -d "$REF_NAME".mmi "$REFERENCE_GENOME" "$ALIGNER_OPTS"
 		;;
 	"hisat2")
-		hisat2-build "$REF_GENOME" "$REF_DIR" "$ALIGNER_OPTS"
+		hisat2-build "$REFERENCE_GENOME" "$REF_DIR" "$ALIGNER_OPTS"
 		;;
 	"bowtie2")
-		bowtie2-build "$REF_GENOME" "$REF_DIR" "$ALIGNER_OPTS"
+		bowtie2-build "$REFERENCE_GENOME" "$REF_DIR" "$ALIGNER_OPTS"
 		;;
 	"bwa")
-		bwa index "$REF_GENOME" "$ALIGNER_OPTS"
+		bwa index "$REFERENCE_GENOME" "$ALIGNER_OPTS"
 		;;
 	# "star" | "STAR")
 
@@ -218,41 +245,41 @@ function index_refgen() {
 ##### Align the sequence against the reference genome using the same tool #####
 ##############################################################################
 function aligner() {
-	echo -e "${c_cyan}Aligning:${c_reset} Mapping the reads onto reference genome ($REF_GENOME) using $ALIGNER_TOOL"
+	echo -e "${c_cyan}Aligning:${c_reset} Mapping the reads onto reference genome ($REFERENCE_GENOME) using $ALIGNER_TOOL"
 	if [ "$FASTQ_READ" == "paired" ]; then
-		for ((i = 0; i < ${#INPUT_FASTQ_FILES[@]}; i += 2)); do
-			SAMOUT="aligned_output/sam/$(basename "${INPUT_FASTQ_FILES[i]}" | cut -d'.' -f1).sam"
+		for ((i = 0; i < ${#RAWDATA_FILES[@]}; i += 2)); do
+			SAMOUT="$ALIGNED_DIR/sam/$(basename "${RAWDATA_FILES[i]}" | cut -d'.' -f1).sam"
 			case "$ALIGNER_TOOL" in
 			"minimap2")
-				minimap2 -a "$REF_NAME".mmi "${INPUT_FASTQ_FILES[i]} ${INPUT_FASTQ_FILES[i + 1]}" -o "$SAMOUT" "$ALIGNER_OPTS"
+				minimap2 -a "$REF_NAME".mmi "${RAWDATA_FILES[i]} ${RAWDATA_FILES[i + 1]}" -o "$SAMOUT" "$ALIGNER_OPTS"
 				;;
 			"hisat2")
-				hisat2 -x "$REF_GENOME" -1 "${INPUT_FASTQ_FILES[i]}" -2 "${INPUT_FASTQ_FILES[i + 1]}" -S "$SAMOUT" "$ALIGNER_OPTS"
+				hisat2 -x "$REFERENCE_GENOME" -1 "${RAWDATA_FILES[i]}" -2 "${RAWDATA_FILES[i + 1]}" -S "$SAMOUT" "$ALIGNER_OPTS"
 				;;
 			"bowtie2")
-				bowtie2 -x "$REF_GENOME" -1 "${INPUT_FASTQ_FILES[i]}" -2 "${INPUT_FASTQ_FILES[i + 1]}" -S "$SAMOUT" "$ALIGNER_OPTS"
+				bowtie2 -x "$REFERENCE_GENOME" -1 "${RAWDATA_FILES[i]}" -2 "${RAWDATA_FILES[i + 1]}" -S "$SAMOUT" "$ALIGNER_OPTS"
 				;;
 			"bwa" | *)
-				bwa mem "$REF_GENOME" "${INPUT_FASTQ_FILES[i]} ${INPUT_FASTQ_FILES[i + 1]}" -o "$SAMOUT" "$ALIGNER_OPTS"
+				bwa mem "$REFERENCE_GENOME" "${RAWDATA_FILES[i]} ${RAWDATA_FILES[i + 1]}" -o "$SAMOUT" "$ALIGNER_OPTS"
 				;;
 			esac
 
 		done
 	else
-		for file in "${INPUT_FASTQ_FILES[@]}"; do
-			SAMOUT="aligned_output/sam/$(basename "$file" | cut -d'.' -f1).sam"
+		for file in "${RAWDATA_FILES[@]}"; do
+			SAMOUT="$ALIGNED_DIR/sam/$(basename "$file" | cut -d'.' -f1).sam"
 			case "$ALIGNER_TOOL" in
 			"minimap2")
 				minimap2 -a "$REF_NAME".mmi "$file" -o "$SAMOUT" "$ALIGNER_OPTS"
 				;;
 			"hisat2")
-				hisat2 -x "$REF_GENOME" "$file" -S "$SAMOUT" "$ALIGNER_OPTS"
+				hisat2 -x "$REFERENCE_GENOME" "$file" -S "$SAMOUT" "$ALIGNER_OPTS"
 				;;
 			"bowtie2")
-				bowtie2 -x "$REF_GENOME" -U "$file" -S "$SAMOUT" "$ALIGNER_OPTS"
+				bowtie2 -x "$REFERENCE_GENOME" -U "$file" -S "$SAMOUT" "$ALIGNER_OPTS"
 				;;
 			"bwa" | *)
-				bwa mem "$REF_GENOME" "$file" -o "$SAMOUT" "$ALIGNER_OPTS"
+				bwa mem "$REFERENCE_GENOME" "$file" -o "$SAMOUT" "$ALIGNER_OPTS"
 				;;
 			esac
 
@@ -267,8 +294,8 @@ function aligner() {
 ############################################################
 function sam2bam() {
 	echo -e "${c_cyan}BAM:${c_reset} Converting, sorting and Indexing SAM file into BAM file format"
-	for file in aligned_out/sam/*; do
-		BAM_OUT="aligned_output/bam/$(basename "$file" .sam).bam"
+	for file in "$ALIGNED_DIR"/sam/*; do
+		BAM_OUT="$ALIGNED_DIR/bam/$(basename "$file" .sam).bam"
 		samtools view -Sb -o "$BAM_OUT" "$file"
 		samtools sort -o "$BAM_OUT" "$file"
 		samtools index "$BAM_OUT"
@@ -281,9 +308,9 @@ function sam2bam() {
 function ann_genes() {
 	echo -e "${c_cyan}Quantification:${c_reset} Quantify the lncRNA from annotation file ($ANN_FILE)"
 	if [ "$FASTQ_READ" == "paired" ]; then
-		featureCounts -p --countReadPairs -t exon -g gene_id -a "$ANN_FILE" -o counts.txt aligned_output/bam/*
+		featureCounts -p --countReadPairs -t exon -g gene_id -a "$ANN_FILE" -o counts.txt "$ALIGNED_DIR"/bam/*
 	else
-		featureCounts -t exon -g gene_id -a "$ANN_FILE" -o counts.txt aligned_output/bam/*
+		featureCounts -t exon -g gene_id -a "$ANN_FILE" -o counts.txt "$ALIGNED_DIR"/bam/*
 	fi
 }
 
@@ -299,8 +326,8 @@ function diffge() {
 ##### Loop all bam files and convert them into bed files #####
 ##############################################################
 function bam2bed() {
-	for file in aligned_out/bam/*; do
-		BED_OUT="aligned_output/bed/$(basename "$file" .bam).bed"
+	for file in "$ALIGNED_DIR"/bam/*; do
+		BED_OUT="$ALIGNED_DIR/bed/$(basename "$file" .bam).bed"
 		bedtools bamtobed -bed12 -i "$file" >"$BED_OUT"
 	done
 }
@@ -309,22 +336,21 @@ function bam2bed() {
 ##### Merge the many bed files using sort unix command #####
 ############################################################
 function mergebed() {
-	BEDFILE="results/final.bed" #TODO FIXME
 	# filearg=""
-	# for file in $(ls -v aligned_output/bed/*); do
+	# for file in $(ls -v $ALIGNED_DIR/bed/*); do
 	#     # to chain the input argument together for all files. bedtools does not take * as expansion
 	#     filearg="$filearg -i $file"
 	# done
-	# cat aligned_output/bed/*.bed | bedtools sort -i stdin | bedtools merge -i stdin > "$BEDFILE"
+	# cat $ALIGNED_DIR/bed/*.bed | bedtools sort -i stdin | bedtools merge -i stdin > "$BEDFILE"
   # NOTE: bedtools merge gets you only few columns, dont know the difference tho, with '-c' you can filter for specific columns
-	sort -u aligned_output/bed/*.bed -o "$BEDFILE"
+	sort -u "$ALIGNED_DIR"/bed/*.bed -o "$BEDFILE"
 }
 
 ##############################################################################################
 ##### Calculate the coding potential of merged bed file against built model of reference #####
 ##############################################################################################
 function codingpotential() {
-	cpat -r "$REF_EDITION" -g "$BEDFILE" -d "$LOGIT" -x "$HEXAMER" -o "results/final-out" "$CPAT_OPTS"
+	cpat -r "$REFERENCE_GENOME" -g "$BEDFILE" -d "$LOGIT_FILE" -x "$HEXAMER_FILE" -o "$CPAT_OUTPUT_PREFIX" "$CPAT_OPTS"
 	Rscript "ncp-filter.R" "results/final-out.ORF_prob.tsv" #FIXME
 }
 
@@ -340,22 +366,22 @@ function extract_lncrna() {
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-i | --input)
-		INPUT_FASTQ_DIR="$2"
-		check_fastq
+		RAWDATA_DIR="$2"
 		;;
 	-h | --help)
 		help_info
 		;;
+  --init-config)
+      _init_config > "$LNCRNA_CONF"
+    ;;
 	-t | --trim)
 		TRIMMER_TOOL="$2"
-		TRIMMER_OPTS="$3"
 		;;
 	-r | --refgenome)
-		REF_GENOME="$2"
+		REFERENCE_GENOME="$2"
 		;;
 	-a | --aligner)
 		ALIGNER_TOOL="$2"
-		ALIGNER_OPTS="$3"
 		;;
 	-n | --annotate)
 		ANN_FILE=$2
@@ -366,12 +392,12 @@ while [ $# -gt 0 ]; do
 	-p | --paired)
 		FASTQ_READ="paired"
 		;;
-	-c | --cpat)
-		CPAT_OPTS="$2"
-		;;
   -@ | --threads)
       THREADS="$2"
       ;;
+  -c | --config)
+  LNCRNA_CONF="$2"
+  ;;
 		# *)
 		#     help_info
 		#     ;;
@@ -379,5 +405,11 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
+_parse_conf
+_check_pkgs
+check_fastq
+
+
 # aligner
 print_fastq_files
+# echo $ALIGNER_TOOL
