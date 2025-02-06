@@ -1,0 +1,203 @@
+#+title: Tool to produce lncRNA
+
+* The Plan
+:PROPERTIES:
+:created:  Monday 15 July 2024 15:30
+:ID:       20240823T100138
+:END:
+- Fastq > Aln > DEG (lnRNA)
+- Long non-coding RNA
+- cpc2 - coding potential
+- threads of each gene -> salmon
+- cpc2 on gene list - gene => 200 nucleotide | check introns
+- coding potential - 10
+- pearson correlation...
+
+FastQC
+Fastp/Trim Galore!: Fastp is normal settings. Trimgalore: --quality 20 --length 20
+STAR/HISAT2: normal settings
+StringTie: normal settings no parameters
+FeatureCounts/htseq-count: NCRNA GTF FILE
+
++ 2024-07-31
+  - Check on spliceR package [[https://bmcbioinformatics.biomedcentral.com/articles/10.1186/1471-2105-15-81][paper]]
+  - Finalized with [[https://github.com/liguowang/cpat/?tab=readme-ov-file][CPAT]] tool [[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3616698/][paper]], might consider salmon, gtf to obtain counts
+
++ As on 2024-08-09
+  - To better bar plot for all ncrna,
+
++ As on 2024-08-22
+  - Normal GTF -> gene symbol -> bed
+  - Get two list
+     One bed file with chr1
+     One with Gtf chr1
+  - TransAT
+    similarly RNA transcript annotation tool
+  - Generate own GTF based on location value in bed file and counts where you get 2 count file:
+    1) Known loci w/ full feature list.
+    2) Unknown loci with UID+counts
+
+  - The first and better approach seems to be to filter during counts itself.
+     Edit htseq (py) or subread (R) and add column for read ids
+
+** Feelnc/CPC2/PlncPro: =-i data/example.fa -o example_output --ORF=
+Deseq2/EdgeR: Settings I showed in the scripts I gave you
+
+After that we need to fetch the fasta sequence of the genes we received as differentials and store them as fasta files. See how we can do that. We might need bedtools.
+
+- UcSC - Ref genome
+
+** Notes
++ PreLnc : https://github.com/LeiCao97/PreLnc/issues
+  - A tool to identify lncRNAs based on multiple features
++ lncpipe : https://github.com/nf-core/lncpipe
+  - A nextflow pipeline
++ Refer: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9006410/ ([[file:refer/lncRNA-brain.pdf][file]])
+
++ List of Tools
+  - Util :: wget,
+  - PP :: fastp
+  - A :: bwa, minimap2, hisat2
+  - PA :: samtools
+  - Ann :: subread or htseq
+  - DEG :: Rscript
+
++ The tool design protocol:
+  ~tool.sh -i rawData -a minimap2~
+
+  - Requirement:
+    - =fastq= files in some dir as --input
+    - file tree will have inputDir | samDir | bamDir |
+
+
+*** Paper summary
+- 1393 novel lncRNA transcript in /Solenopsis invicta/ with 2 exons
+- They applied spearman's rank corr =𝛒=
+- 65 transcript from virgin to mated state.
+- Workflow ::
+  - QC - Trimmomatic
+  - aligner - STAR
+  - assemble - StingTie with merge
+  - Filter class code - Gffcompare
+  - legnth - > 200 base
+  - CPAT or cpc2
+  - FIlter out ORF - TransDecoder
+  - Exp Quantify - Salmon
+  - DESeq2
+
+- lncRNA has lower GC content - Maybe biological function?
+
+- New lncRNA had TPM>10 (high exp)
+- log2fc >1 & FDR < 0.01
+
+- Study indicates lack of high quality denovo assembly for that species.
+
+** Tool links
+- cpc2 - https://github.com/gao-lab/CPC2_standalone
+- salmon - https://salmon.readthedocs.io/en/latest/salmon.html#using-salmon
+- StingTie - https://ccb.jhu.edu/software/stringtie/index.shtml?t=manual
+
+** Bash Notes
+- Use =:= built-in to denote true.
+  - ~$foo:="hello"~ denotes, hello if foo is not set.
+  - Basically end true form. ($GENOME-DIR:"./.")
+- Refer :: [[/nix/store/jh03ihgh2ilpf0q0lyd0w521nn2k0jcf-ani-cli-4.8/bin/.ani-cli-wrapped][ani-cli]] & [[/nix/store/ihq3pw0pg6z8vay4w9djcxz6n00v1pd7-ytfzf-2.6.2/bin/.ytfzf-wrapped][ytfzf]] for bash script structure
+- Refer :: [[file:../../reads/20230731T152045--bash__bash.html][bash manual]]
+
+
+** Code Notes
+- As of 22:33, So far outline is legit.
+- Debug :: There is a recursion from case statement on =pre_process()=
+- Think on how to handle =case= for each argument, inter-playing with function.
+
+*** Workflow
+1. [ ] check fastq files
+2. [ ] check dependency
+3. [ ] Trim - fastp/trimgalore
+4. [ ] Index+Align - bwa,bowtie2,minimap2,hisat2,star
+5. [ ] BAM - samtools
+6. [ ] Annotate (featCount | Salmon?)
+7. [ ] DEG (Rscript)
+8. [ ] CPC2?
+9. [ ] Pearson Corr
+
+** Queries
+1. Options? So far can only think of aligner as option.
+
+2. How to structure code, sequential workflow?
+   - Parse files, act on file.
+
+3. how to detect and get data for species ref? annotation?
+   - API to ENA or SRA?
+
+4. Do we need repeat of steps after a process, like QC after alignment? featureCounts after ....
+   https://github.com/gevaertlab/RNASeq_pipeline/blob/master/run_workflow.sh
+
+5. Merge bam or bed files
+   Most suited would be to merge bed files, as it is text file, and sort unique. samtools merge can limit via streaming of files.
+
+6. Extract fasta file via gene list
+=seqkit= is promising. Can samtools by its =faidx= do the job?
+
+7. [ ] Cannot do deseq on only ncRNA, cause no way to filter them.
+Cpat gives ID as in (SRR....ORF), but counts will have geneID (NC_....)
+
+  - We get =SRR...= from bam~bed, then gtf will have
+
+** TODO QOC
+- [X] Better way to name output files based on an ID and sequence numbers?
+- [ ] Add STAR aligner
+- [ ] Add HTSeq count - Would need python packaging from nix
+  https://htseq.readthedocs.io/en/release_0.11.1/count.html
+- [ ] Avoid relative path, as user may also run script from home dir? as output dir are in =pwd=
+- [ ] Package trimgalore, cpc2 in nix
+- [-] Metadata/condition for the data in deseq?
+- [X] Merge Bed files or Bam files
+  Went with bed files, as they are plain text. Next task is to know which is computationally intensive.
+- [X] Get CP using CPAT
+- [ ] Better file naming scheme, give out prefix option?
+- [ ] Support [[http://www.rnabinding.com/CPPred/][CPPred]], CPC2, PLEK also for CP?
+- [ ] Strandness of the libraries (RSeQC) ?
+- [ ] Config file in yaml or plain text
+- [ ] Parallel the jobs/runs
+- [ ] =set -e= to exit if any command does not run
+- [ ] Plugin/extension/addon system with further downstream analysis
+  - Get LNCGsea
+  - topGo
+  - GDCRna tools
+- [ ] Give an =--import= option with doc for modification of Rscript for designed analysis of user
+  - Workflow is to copy the template script file, and then allow them to pass modified file as script.
+  - Cons are, user needs to manually debug for their issues.
+  - Either way helps the tools for community approach
+
+*** Config TODOs
+- [ ] Set threads options to tools
+- [ ] Encode the config template inside tool itself to init for new dir
+- [ ] Dynamics vars for all output file and FHS for results
+- [ ] Include the opts params for tool also? =-a bwa '-t 4 -m'=, so can just merge it?
+- [ ] add booleans for plots and visualization extension; =DESEQ_HIST=..
+- [ ] Make each plugin or task individually runable. Like =--deseq= or certain steps, so analysis can be narrowed.
+   - This can be achieved by using lot of conditionals for certain file+types.
+
+*** Rejected Plans
+:PROPERTIES:
+:ID:       20240830T104430
+:END:
+- [-] GTF - Counts method
+- [-] No need for counts via GTF
+
+* CPAT
+- we get
+=seq_ID | ID | mRNA | ORF_strand | ORF_frame | ORF_start | ORF_end | ORF | Fickett | Hexamer | Coding_prob=
+
+** TODO On completion [16%]
+
+- [X] Histogram+Volcano on CPC - lnc | miRna | noncoding
+  - Even for this you need to cross refer genes and grab the list
+  - Nope, just the value of ORF was enough.
+- [ ] Diff of ncRNA - 0.3 (DESeq/edgeR)
+   - To do that plan is to get counts based on Chr loci from CPAT output on Bam
+- [ ] MAplot based on two log2 side
+- [ ] mirna - 23
+- [ ] relationship bw miRNA and lncRNA gene relation/regulation - mirNet (network analysis)
+- [ ] ceRNA hypothesis - Identification tool
