@@ -3,7 +3,8 @@
 # Script to identify lncRNA
 LNCRNA_VERSION=0.1
 
-# set -e (to exit if any command does not run)
+# set -e ## (to exit if any command does not run)
+# set -x ## to debug and know command is run during exec
 
 # colors echo -e {{{
 c_red="\033[1;31m"
@@ -45,20 +46,20 @@ help_info() {
       ${c_yellow}-v, --version${c_reset}
         Print version of the tool
 
-        " "${0##*/}" "${0##*/}"  # to printf the bash file name
-        	exit 0
+        " "${0##*/}" "${0##*/}" # to printf the bash file name
+	exit 0
 }
 
 ###########################
 ##### Config template #####
 ###########################
 function _init_config() {
-    cat <<- EOF
-hello
-world
+	cat <<-EOF
+		hello
+		world
 
-EOF
-exit 0
+	EOF
+	exit 0
 }
 
 #####################################################################
@@ -66,42 +67,42 @@ exit 0
 #####################################################################
 : "${LNCRNA_CONF:=$PWD/lncrna.conf}"
 function _parse_conf() {
-if [ -f "$LNCRNA_CONF" ]; then
-    source "$LNCRNA_CONF"
-else
-    echo -e "${c_red}Error:${c_reset} No config file found"
-    exit 1
-fi
+	if [ -f "$LNCRNA_CONF" ]; then
+		source "$LNCRNA_CONF"
+	else
+		echo -e "${c_red}Error:${c_reset} No config file found"
+		exit 1
+	fi
 }
 
 #################################
 ##### Check for Executables #####
 #################################
 _check_pkgs() {
-    _dependency=(
-        "$ALIGNER_TOOL" "$TRIMMER_TOOL"
-    )
-    for pkg in "${_dependency[@]}"; do
-        if [ ! -x "$(command -v "$pkg")" ]; then
-            echo -e "Package ${c_yellow}$pkg${c_reset} not installed."
-            echo "Please install it or use the preferred Nix package method."
-            exit 0
-        fi
-    done
+	_dependency=(
+		"$ALIGNER_TOOL" "$TRIMMER_TOOL"
+	)
+	for pkg in "${_dependency[@]}"; do
+		if [ ! -x "$(command -v "$pkg")" ]; then
+			echo -e "Package ${c_yellow}$pkg${c_reset} not installed."
+			echo "Please install it or use the preferred Nix package method."
+			exit 0
+		fi
+	done
 }
 
 ###############################
 ##### Check for all files #####
 ###############################
 _check_files() {
-    _data_files=(
-        "$REFERENCE_GENOME" "$LOGIT_FILE" "$HEXAMER_FILE"
-    )
-    for file in "${_data_files[@]}"; do
-        [ -f "$file" ] || \
-            (echo -e "${c_cyan}Error:${c_reset} $file file not found" \
-                 && exit 1)
-    done
+	_data_files=(
+		"$REFERENCE_GENOME" "$LOGIT_FILE" "$HEXAMER_FILE"
+	)
+	for file in "${_data_files[@]}"; do
+		[ -f "$file" ] ||
+			(echo -e "${c_cyan}Error:${c_reset} $file file not found" &&
+				exit 1)
+	done
 
 }
 
@@ -336,13 +337,15 @@ function bam2bed() {
 ##### Merge the many bed files using sort unix command #####
 ############################################################
 function mergebed() {
+	# method 1
 	# filearg=""
 	# for file in $(ls -v $ALIGNED_DIR/bed/*); do
 	#     # to chain the input argument together for all files. bedtools does not take * as expansion
 	#     filearg="$filearg -i $file"
 	# done
 	# cat $ALIGNED_DIR/bed/*.bed | bedtools sort -i stdin | bedtools merge -i stdin > "$BEDFILE"
-  # NOTE: bedtools merge gets you only few columns, dont know the difference tho, with '-c' you can filter for specific columns
+
+	# method 2
 	sort -u "$ALIGNED_DIR"/bed/*.bed -o "$BEDFILE"
 }
 
@@ -371,9 +374,9 @@ while [ $# -gt 0 ]; do
 	-h | --help)
 		help_info
 		;;
-  --init-config)
-      _init_config > "$LNCRNA_CONF"
-    ;;
+	--init-config)
+		_init_config >"$LNCRNA_CONF"
+		;;
 	-t | --trim)
 		TRIMMER_TOOL="$2"
 		;;
@@ -392,12 +395,12 @@ while [ $# -gt 0 ]; do
 	-p | --paired)
 		FASTQ_READ="paired"
 		;;
-  -@ | --threads)
-      THREADS="$2"
-      ;;
-  -c | --config)
-  LNCRNA_CONF="$2"
-  ;;
+	-@ | --threads)
+		THREADS="$2"
+		;;
+	-c | --config)
+		LNCRNA_CONF="$2"
+		;;
 		# *)
 		#     help_info
 		#     ;;
@@ -408,7 +411,6 @@ done
 _parse_conf
 _check_pkgs
 check_fastq
-
 
 # aligner
 print_fastq_files
